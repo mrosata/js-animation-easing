@@ -65,40 +65,40 @@ AnimeQ.prototype.stopQueue = function () {
  * @private
  */
 AnimeQ.prototype.processQueue = function () {
+  var index, item, attr, newPos;
   
   // Loop through each item that is in our animators queue
-  for(var index in this.queue) {
-
-    var item = this.queue[index];
+  for(index in this.queue) {
+    item = this.queue[index];
 
     // Must solve for each animated property for item
-    for (var attr in item.endValue) {
+    for (attr in item.endValue) {
 
       // Check if the totalFrames are done, if so render final position
       if (item.currFrame >= item.totalFrames) {
-
         // Set the item to it's final designated property (the property passed by programmer)
         item.elm.style[attr] = item.endValue[attr];
         // Set items animating property to false
         item.animating = false;
+        
       } else {
-  
         // This item is still animating, call easing function to get new position
-        var newPos = AnimeQ.prototype.easingFunc[item.easing](item.currFrame, item.totalFrames, item.start[attr], item.change[attr]);
+        newPos = AnimeQ.prototype.easingFunc[item.easing](item.currFrame, item.totalFrames, item.start[attr], item.change[attr]);
         // Set the new position on the HTMLElements style object
         item.elm.style[attr] = newPos + 'px';
+        
       }
     }
 
     // Is item still animating?
     if (item.animating) {
-
       // Yes, increment currFrame
       item.currFrame++;
+      
     } else {
-
       // Remove item from queue
       this.removeFromQueue(item);
+      
     }
   }
 };
@@ -140,17 +140,18 @@ AnimeQ.prototype.easingFunc = {
  */
 AnimeQ.prototype.animate = function (itemElm, endPoints, time, easing) {
   // item will hold all the properties for and reference to element and props needed to animate
+  var attr, style;
   var item = {};
   
   // Check that user passed in easing fn name and that we have timing function
   if (!!!easing || !AnimeQ.prototype.easingFunc.hasOwnProperty(easing)) {
-
-    // else, just make linear
+    // No easing? or Yes easing but we don't suuport, no worries, just use linear animation
     item.easing = 'linear';
+    
   } else {
-
     // Easing Function exists, so we'll use it for this elements
     item.easing = easing;
+    
   }
 
   // ['elm'] our HTMLElement reference
@@ -166,9 +167,9 @@ AnimeQ.prototype.animate = function (itemElm, endPoints, time, easing) {
   item.change = {};
 
   // To find start vals, and solve change vals, we need computed style
-  var style = window.getComputedStyle(item.elm, null);
+  style = window.getComputedStyle(item.elm, null);
   // Loop through our endPoint values (ex: top, left, right, bottom)
-  for (var attr in endPoints) {
+  for (attr in endPoints) {
     // set the current value as start
     item.start[attr] = parseInt(style[attr], 10);
     // endValue holds the final value for x and y
