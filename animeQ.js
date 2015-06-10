@@ -1,11 +1,19 @@
+
 /*  Animation Queue using vanilla JavaScript w/Easing methods
  *      by: Michael Rosata
  *          and Algebra too, stay in school.
  */
+ 
+// Grab browser environments requestAnimationFrame if needed or poly-fill requestAnimationFrame().
+var requestAnimationFrame = window.requestAnimationFrame || window.webkitRequestAnimationFrame || window.mozRequestAnimationFrame || window.msRequestAnimationFrame || window.oRequestAnimationFrame || function (cb) { window.setTimeout(callback, 30);};
+// I will also poly-fill performance.now() if it that is something that is needed.
+var pageLoadedAt = new Date().getTime();
+// Basically the poly-fill for performance.now() is a weak measurement of elapsed time after this script begins.
+var performance = window.performance || {now: function () { return new Date().getTime() - pageLoadedAt;} };
 
 
 /**
- * Main Object AnimeQ 
+ * Main Object AnimeQ
  * @constructor
  */
 function AnimeQ (int) {
@@ -14,7 +22,7 @@ function AnimeQ (int) {
 }
 
 /**
- * Adds a parsed item into instances Queue
+ * Adds an AnimeQ setup animation item into current instances Queue
  * @private
  */
 AnimeQ.prototype.addToQueue = function (item) {
@@ -22,7 +30,7 @@ AnimeQ.prototype.addToQueue = function (item) {
   this.queue.push(item);
   // If this is the first/only item, start queue
   if (this.queue.length == 1) {
-    this.startQueue();
+    this.runQueue();
   }
 };
 
@@ -36,71 +44,80 @@ AnimeQ.prototype.removeFromQueue = function (item) {
 };
 
 /**
- * Begin animating, runs whenever a new queue begins. If all animating elements have finished,
- * then AnimeQ stops running it's queue to save resources. If another animation is added to
- * the queue then it will start the inteval timer back up. 
+ * Checks that queue has length before beginning or continuing handled elements animation into
+ * the next animation frame. Shouldn't ever need to cancel an AnimationFrame, but in fringe
+ * case, you can just use self method AnimeQ.stopQueue()
  * @private
  */
-AnimeQ.prototype.startQueue = function () {
+AnimeQ.prototype.runQueue = function () {
   var inst = this;
-  this.timer = window.setInterval(function () {
-    inst.processQueue();
-  }, this.intv);
+  // Only request next frame if there is something to animate.
+  if (!inst.queue.length) return false;
+  this.timer = requestAnimationFrame(function (currentTimeHR) {
+    // The currentTimeHR passed in by requestAnimation frame doesn't seem to act how listed in MDN docs 
+    // https://developer.mozilla.org/en-US/docs/Web/API/window/requestAnimationFrame  - -
+    // I believe this has to do with the way that the script is called eg: main or worker. So to be safe
+    // I will explicitly call performance.now(), it should provide desired functionality and accuracy level.
+    var hrt = performance.now();
+    inst.processQueue(hrt);
+  });
 };
 
 /**
- * When animations end, AnimeQ clears the Interval timer that manages the function to run through
- * each elements animation properties and calculate and render their current frame
+ * ## depricated ## Used to have to cancel frames but now with requestAnimationFrame
+ * we don't, all we have to do is not request the next execution of processQueue which
+ * I have setup to figure out automatically. But for now, the method will remain here.
  * @private
  */
- //todo: Be a good idea to have this function call a clear queue if elements are still in the queue. Then we could have "public" pause/kill methods
+  //todo: Be a good idea to have this function call a clear queue if elements are still in the queue. Then we could have "public" pause/kill methods
 AnimeQ.prototype.stopQueue = function () {
-  window.clearInterval(this.timer);
+  window.cancelAnimationFrame(this.timer);
   this.timer = null;
 };
 
 /**
- * The work horse. This function is called every animation frame and it runs through each element in the queue, based on their current frame and easing
- * method it will call the method to calculate position, then it will update the position and also update progress tracking data
+ * The work horse. This function is called every animation frame and it runs through each element in the queue. 
+ * Based on their current frame and easing set on item, it will call proper easing method to calculate position, 
+ * then it will update the position and track overall progress of each animation
  * @private
+ * @param DOMHighResTimeStamp hrt - performance.now() timestamp passed by requestAnimationFrame
  */
-AnimeQ.prototype.processQueue = function () {
-  var index, item, attr, newPos;
-  
+AnimeQ.prototype.processQueue = function (hrt) {
+  var index, attr, item;
   // Loop through each item that is in our animators queue
   for(index in this.queue) {
+
     item = this.queue[index];
 
     // Must solve for each animated property for item
     for (attr in item.endValue) {
 
       // Check if the totalFrames are done, if so render final position
-      if (item.currFrame >= item.totalFrames) {
+      if (hrt >= item.endTime) {
+
         // Set the item to it's final designated property (the property passed by programmer)
         item.elm.style[attr] = item.endValue[attr];
         // Set items animating property to false
         item.animating = false;
-        
       } else {
+
         // This item is still animating, call easing function to get new position
-        newPos = AnimeQ.prototype.easingFunc[item.easing](item.currFrame, item.totalFrames, item.start[attr], item.change[attr]);
+        var newPos = AnimeQ.prototype.easingFunc[item.easing](hrt - item.startTime, item.duration, item.start[attr], item.change[attr]);
         // Set the new position on the HTMLElements style object
         item.elm.style[attr] = newPos + 'px';
-        
       }
     }
 
     // Is item still animating?
     if (item.animating) {
-      // Yes, increment currFrame
-      item.currFrame++;
-      
+
     } else {
+
       // Remove item from queue
       this.removeFromQueue(item);
-      
     }
   }
+  this.runQueue();
 };
 
 /**
@@ -109,7 +126,7 @@ AnimeQ.prototype.processQueue = function () {
  */
 // Array with the names of easing functions we have available
 AnimeQ.prototype.easingFunc = {
-  
+
   // Linear, (default) move in straight path
   linear : function (time, duration, start, change) {
     return ( change * ( time/duration ) + start );
@@ -127,8 +144,9 @@ AnimeQ.prototype.easingFunc = {
     // When percent becomes 1, we have -change*-1 + start, which is change+start!
     return (-change * (percent * (percent-2)) + start);
   }
-  
+
 };
+
 
 /**
  * The main "public" function. It will process items passed by programmer to be animated
@@ -140,36 +158,38 @@ AnimeQ.prototype.easingFunc = {
  */
 AnimeQ.prototype.animate = function (itemElm, endPoints, time, easing) {
   // item will hold all the properties for and reference to element and props needed to animate
-  var attr, style;
   var item = {};
-  
+
   // Check that user passed in easing fn name and that we have timing function
   if (!!!easing || !AnimeQ.prototype.easingFunc.hasOwnProperty(easing)) {
-    // No easing? or Yes easing but we don't suuport, no worries, just use linear animation
+
+    // else, just make linear
     item.easing = 'linear';
-    
   } else {
+
     // Easing Function exists, so we'll use it for this elements
     item.easing = easing;
-    
   }
 
   // ['elm'] our HTMLElement reference
   item.elm = itemElm;
   // The current frame, the time
-  item.currFrame = 1;
-  // totalFrames, the duration
-  item.totalFrames = parseInt(time/this.intv, 10);
+  item.startTime = performance.now();
+  // endTime - relative measure of when the animation will stop
+  item.endTime = parseInt(time, 10) + item.startTime;
+  // duration is total amount of time that will elapse over entire animation
+  item.duration = item.endTime - item.startTime;
+  // endValue will hold the final position desired for element
   item.endValue = {};
   // start positions. doesn't change
   item.start = {};
-  // change between start and end positions. doesn't change
+  // the difference between start and end positions.
   item.change = {};
 
   // To find start vals, and solve change vals, we need computed style
-  style = window.getComputedStyle(item.elm, null);
+  var style = window.getComputedStyle(item.elm, null);
   // Loop through our endPoint values (ex: top, left, right, bottom)
-  for (attr in endPoints) {
+  for (var attr in endPoints) {
     // set the current value as start
     item.start[attr] = parseInt(style[attr], 10);
     // endValue holds the final value for x and y
